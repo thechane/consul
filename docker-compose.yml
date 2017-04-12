@@ -1,0 +1,66 @@
+version: '3.1'
+
+#customise this with options from
+#https://www.consul.io/docs/agent/options.html
+
+services:
+
+  seed:
+    hostname: seed
+    image: consul:0.8.0
+    deploy:
+      restart_policy:
+        condition: none  #we do not want this to be restarted on timeout (see entrypoint options below)
+      replicas: 1
+      placement:
+        constraints:
+          - "engine.labels.access == temp"
+          - "engine.labels.access != consul"
+    environment:
+      - "CONSUL_LOCAL_CONFIG={\"disable_update_check\": true}"
+      - "CONSUL_BIND_INTERFACE=eth0"
+    entrypoint:
+      - timeout     #this seed fires up the cluster after which it is no longer needed
+      - -sTERM      #this is the same signal as docker would send on a scale down / stop
+      - -t300       #terminate after 5 mins
+      - consul
+      - agent
+      - -server
+      - -bootstrap-expect=5
+      - -data-dir=/tmp/consuldata
+      - -bind={{ GetInterfaceIP "eth0" }}
+    networks:
+      - "consul"
+
+  cluster:
+    image: consul:0.8.0
+    depends_on:
+      - "seed"
+    deploy:
+      mode: global                                      ##this will deploy to all nodes that
+      placement:
+        constraints:
+          - "engine.labels.access == consul"            ##have the consul label
+          - "engine.labels.access != temp"
+    environment:
+      - "CONSUL_LOCAL_CONFIG={\"disable_update_check\": true}"
+      - "CONSUL_BIND_INTERFACE=eth0"
+      - "CONSUL_HTTP_ADDR=0.0.0.0"
+    entrypoint:
+      - consul
+      - agent
+      - -server
+      - -data-dir=/tmp/consuldata
+      - -bind={{ GetInterfaceIP "eth0" }}
+      - -client=0.0.0.0
+      - -retry-join=seed:8301
+      - -ui                                              ##assuming you want the UI on
+    networks:
+      - "consul"
+    ports:
+      - "8500:8500"
+      - "8600:8600"
+
+networks:
+  consul:
+    driver: overlay
