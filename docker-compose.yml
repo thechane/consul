@@ -9,8 +9,6 @@ services:
     hostname: seed
     image: consul:0.9.2
     deploy:
-      restart_policy:
-        condition: none  #we do not want this to be restarted on timeout (see entrypoint options below)
       replicas: 1
       placement:
         constraints:
